@@ -4,29 +4,25 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.ColorMatrix
-import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Rect
-import android.hardware.Sensor
-import android.hardware.SensorManager
+import android.os.BatteryManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Message
-import androidx.palette.graphics.Palette
 import android.support.wearable.watchface.CanvasWatchFaceService
 import android.support.wearable.watchface.WatchFaceService
 import android.support.wearable.watchface.WatchFaceStyle
 import android.view.SurfaceHolder
-import android.widget.Toast
+import androidx.core.graphics.ColorUtils
 
 import java.lang.ref.WeakReference
-import java.util.Calendar
-import java.util.TimeZone
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.temporal.ChronoUnit
+import java.util.*
 
 /**
  * Updates rate in milliseconds for interactive mode. We update once a second to advance the
@@ -39,27 +35,6 @@ private const val INTERACTIVE_UPDATE_RATE_MS = 1000
  */
 private const val MSG_UPDATE_TIME = 0
 
-private const val HOUR_STROKE_WIDTH = 5f
-private const val MINUTE_STROKE_WIDTH = 3f
-private const val SECOND_TICK_STROKE_WIDTH = 2f
-
-private const val CENTER_GAP_AND_CIRCLE_RADIUS = 4f
-
-private const val SHADOW_RADIUS = 6f
-
-/**
- * Analog watch face with a ticking second hand. In ambient mode, the second hand isn't
- * shown. On devices with low-bit ambient mode, the hands are drawn without anti-aliasing in ambient
- * mode. The watch face is drawn with less contrast in mute mode.
- *
- *
- * Important Note: Because watch face apps do not have a default Activity in
- * their project, you will need to set your Configurations to
- * "Do not launch Activity" for both the Wear and/or Application modules. If you
- * are unsure how to do this, please review the "Run Starter project" section
- * in the Google Watch Face Code Lab:
- * https://codelabs.developers.google.com/codelabs/watchface/index.html#0
- */
 class MyWatchFace : CanvasWatchFaceService() {
 
     override fun onCreateEngine(): Engine {
@@ -88,19 +63,11 @@ class MyWatchFace : CanvasWatchFaceService() {
         private var mCenterX: Float = 0F
         private var mCenterY: Float = 0F
 
+        private var mIsWeekend: Boolean = false
+
         private var mSecondHandLength: Float = 0F
         private var sMinuteHandLength: Float = 0F
         private var sHourHandLength: Float = 0F
-
-        /* Colors for all hands (hour, minute, seconds, ticks) based on photo loaded. */
-        private var mWatchHandColor: Int = 0
-        private var mWatchHandHighlightColor: Int = 0
-        private var mWatchHandShadowColor: Int = 0
-
-        private lateinit var mHourPaint: Paint
-        private lateinit var mMinutePaint: Paint
-        private lateinit var mSecondPaint: Paint
-        private lateinit var mTickAndCirclePaint: Paint
 
         private lateinit var mBackgroundPaint: Paint
         //private lateinit var mBackgroundBitmap: Bitmap
@@ -110,6 +77,7 @@ class MyWatchFace : CanvasWatchFaceService() {
         private var mLowBitAmbient: Boolean = false
         private var mBurnInProtection: Boolean = false
 
+        private var mHourOffset: Int = 0
         private var mInactiveDayColor: Int = 0
         private var mWeekColors: Array<Int> = arrayOf(
                 Color.rgb(92, 116, 224),
@@ -119,6 +87,13 @@ class MyWatchFace : CanvasWatchFaceService() {
                 Color.rgb(171, 115, 235),
                 Color.rgb(252, 70, 53),
                 Color.rgb(252, 186, 3)
+        )
+
+        private val mEvents: Array<Pair<String, Int>> = arrayOf(
+                Pair<String, Int>("pausa", 1030),
+                Pair<String, Int>("pranzo", 1300),
+                Pair<String, Int>("pausa", 1600),
+                Pair<String, Int>("uscita", 1730)
         )
 
         /* Handler to update the time once a second in interactive mode. */
@@ -148,62 +123,10 @@ class MyWatchFace : CanvasWatchFaceService() {
             mBackgroundPaint = Paint().apply {
                 color = Color.BLACK
             }
-            //mBackgroundBitmap = BitmapFactory.decodeResource(resources, R.drawable.bg)
-
-            /* Extracts colors from background image to improve watchface style. */
-            /*Palette.from(mBackgroundBitmap).generate {
-                it?.let {
-                    mWatchHandHighlightColor = it.getVibrantColor(Color.RED)
-                    mWatchHandColor = it.getLightVibrantColor(Color.WHITE)
-                    mWatchHandShadowColor = it.getDarkMutedColor(Color.BLACK)
-                    updateWatchHandStyle()
-                }
-            }*/
         }
 
         private fun initializeWatchFace() {
-
-            /* Set defaults for colors */
-            mWatchHandColor = Color.WHITE
-            mWatchHandHighlightColor = Color.RED
-            mWatchHandShadowColor = Color.BLACK
             mInactiveDayColor = Color.argb(100, 112, 128, 144)
-
-            mHourPaint = Paint().apply {
-                color = mWatchHandColor
-                strokeWidth = HOUR_STROKE_WIDTH
-                isAntiAlias = true
-                strokeCap = Paint.Cap.ROUND
-                setShadowLayer(
-                        SHADOW_RADIUS, 0f, 0f, mWatchHandShadowColor)
-            }
-
-            mMinutePaint = Paint().apply {
-                color = mWatchHandColor
-                strokeWidth = MINUTE_STROKE_WIDTH
-                isAntiAlias = true
-                strokeCap = Paint.Cap.ROUND
-                setShadowLayer(
-                        SHADOW_RADIUS, 0f, 0f, mWatchHandShadowColor)
-            }
-
-            mSecondPaint = Paint().apply {
-                color = mWatchHandHighlightColor
-                strokeWidth = SECOND_TICK_STROKE_WIDTH
-                isAntiAlias = true
-                strokeCap = Paint.Cap.ROUND
-                setShadowLayer(
-                        SHADOW_RADIUS, 0f, 0f, mWatchHandShadowColor)
-            }
-
-            mTickAndCirclePaint = Paint().apply {
-                color = mWatchHandColor
-                strokeWidth = SECOND_TICK_STROKE_WIDTH
-                isAntiAlias = true
-                style = Paint.Style.STROKE
-                setShadowLayer(
-                        SHADOW_RADIUS, 0f, 0f, mWatchHandShadowColor)
-            }
         }
 
         override fun onDestroy() {
@@ -213,10 +136,8 @@ class MyWatchFace : CanvasWatchFaceService() {
 
         override fun onPropertiesChanged(properties: Bundle) {
             super.onPropertiesChanged(properties)
-            mLowBitAmbient = properties.getBoolean(
-                    WatchFaceService.PROPERTY_LOW_BIT_AMBIENT, false)
-            mBurnInProtection = properties.getBoolean(
-                    WatchFaceService.PROPERTY_BURN_IN_PROTECTION, false)
+            mLowBitAmbient = properties.getBoolean(WatchFaceService.PROPERTY_LOW_BIT_AMBIENT, false)
+            mBurnInProtection = properties.getBoolean(WatchFaceService.PROPERTY_BURN_IN_PROTECTION, false)
         }
 
         override fun onTimeTick() {
@@ -228,50 +149,17 @@ class MyWatchFace : CanvasWatchFaceService() {
             super.onAmbientModeChanged(inAmbientMode)
             mAmbient = inAmbientMode
 
-            updateWatchHandStyle()
-
             // Check and trigger whether or not timer should be running (only
             // in active mode).
             updateTimer()
         }
 
-        private fun updateWatchHandStyle() {
-            if (mAmbient) {
-                mHourPaint.color = Color.WHITE
-                mMinutePaint.color = Color.WHITE
-                mSecondPaint.color = Color.WHITE
-                mTickAndCirclePaint.color = Color.WHITE
+        private fun getBatteryLevelFactor(): Float {
+            val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val level = batteryIntent!!.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+            val scale = batteryIntent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
 
-                mHourPaint.isAntiAlias = false
-                mMinutePaint.isAntiAlias = false
-                mSecondPaint.isAntiAlias = false
-                mTickAndCirclePaint.isAntiAlias = false
-
-                mHourPaint.clearShadowLayer()
-                mMinutePaint.clearShadowLayer()
-                mSecondPaint.clearShadowLayer()
-                mTickAndCirclePaint.clearShadowLayer()
-
-            } else {
-                mHourPaint.color = mWatchHandColor
-                mMinutePaint.color = mWatchHandColor
-                mSecondPaint.color = mWatchHandHighlightColor
-                mTickAndCirclePaint.color = mWatchHandColor
-
-                mHourPaint.isAntiAlias = true
-                mMinutePaint.isAntiAlias = true
-                mSecondPaint.isAntiAlias = true
-                mTickAndCirclePaint.isAntiAlias = true
-
-                mHourPaint.setShadowLayer(
-                        SHADOW_RADIUS, 0f, 0f, mWatchHandShadowColor)
-                mMinutePaint.setShadowLayer(
-                        SHADOW_RADIUS, 0f, 0f, mWatchHandShadowColor)
-                mSecondPaint.setShadowLayer(
-                        SHADOW_RADIUS, 0f, 0f, mWatchHandShadowColor)
-                mTickAndCirclePaint.setShadowLayer(
-                        SHADOW_RADIUS, 0f, 0f, mWatchHandShadowColor)
-            }
+            return level.toFloat() / scale.toFloat()
         }
 
         override fun onInterruptionFilterChanged(interruptionFilter: Int) {
@@ -281,9 +169,6 @@ class MyWatchFace : CanvasWatchFaceService() {
             /* Dim display in mute mode. */
             if (mMuteMode != inMuteMode) {
                 mMuteMode = inMuteMode
-                mHourPaint.alpha = if (inMuteMode) 100 else 255
-                mMinutePaint.alpha = if (inMuteMode) 100 else 255
-                mSecondPaint.alpha = if (inMuteMode) 80 else 255
                 invalidate()
             }
         }
@@ -298,49 +183,6 @@ class MyWatchFace : CanvasWatchFaceService() {
              */
             mCenterX = width / 2f
             mCenterY = height / 2f
-
-            /*
-             * Calculate lengths of different hands based on watch screen size.
-             */
-            mSecondHandLength = (mCenterX * 0.875).toFloat()
-            sMinuteHandLength = (mCenterX * 0.75).toFloat()
-            sHourHandLength = (mCenterX * 0.5).toFloat()
-
-
-            /* Scale loaded background image (more efficient) if surface dimensions change. */
-//            val scale = width.toFloat() / mBackgroundBitmap.width.toFloat()
-//
-//            mBackgroundBitmap = Bitmap.createScaledBitmap(mBackgroundBitmap,
-//                    (mBackgroundBitmap.width * scale).toInt(),
-//                    (mBackgroundBitmap.height * scale).toInt(), true)
-
-            /*
-             * Create a gray version of the image only if it will look nice on the device in
-             * ambient mode. That means we don't want devices that support burn-in
-             * protection (slight movements in pixels, not great for images going all the way to
-             * edges) and low ambient mode (degrades image quality).
-             *
-             * Also, if your watch face will know about all images ahead of time (users aren't
-             * selecting their own photos for the watch face), it will be more
-             * efficient to create a black/white version (png, etc.) and load that when you need it.
-             */
-            if (!mBurnInProtection && !mLowBitAmbient) {
-                initGrayBackgroundBitmap()
-            }
-        }
-
-        private fun initGrayBackgroundBitmap() {
-            /*mGrayBackgroundBitmap = Bitmap.createBitmap(
-                    mBackgroundBitmap.width,
-                    mBackgroundBitmap.height,
-                    Bitmap.Config.ARGB_8888)*/
-            //val canvas = Canvas(mGrayBackgroundBitmap)
-            //val grayPaint = Paint()
-            //val colorMatrix = ColorMatrix()
-            //colorMatrix.setSaturation(0f)
-            //val filter = ColorMatrixColorFilter(colorMatrix)
-            //grayPaint.colorFilter = filter
-            //canvas.drawBitmap(mBackgroundBitmap, 0f, 0f, grayPaint)
         }
 
         /**
@@ -355,11 +197,10 @@ class MyWatchFace : CanvasWatchFaceService() {
                 WatchFaceService.TAP_TYPE_TOUCH_CANCEL -> {
                     // The user has started a different gesture or otherwise cancelled the tap.
                 }
-                WatchFaceService.TAP_TYPE_TAP ->
+                WatchFaceService.TAP_TYPE_TAP -> {
                     // The user has completed the tap gesture.
-                    // TODO: Add code to handle the tap gesture.
-                    Toast.makeText(applicationContext, R.string.message, Toast.LENGTH_SHORT)
-                            .show()
+                    mHourOffset += (if (x <= mCenterX) -1 else +1)
+                }
             }
             invalidate()
         }
@@ -367,32 +208,29 @@ class MyWatchFace : CanvasWatchFaceService() {
 
         override fun onDraw(canvas: Canvas, bounds: Rect) {
             val now = System.currentTimeMillis()
-            mCalendar.timeInMillis = now + 218000
-
+            mCalendar.timeInMillis = now + (mHourOffset * 1000 * 60 * 60)
+            mIsWeekend = (mCalendar.get(Calendar.DAY_OF_WEEK) == 1 || mCalendar.get(Calendar.DAY_OF_WEEK) == 7)
             drawBackground(canvas)
             drawWatchFace(canvas)
         }
 
         private fun drawBackground(canvas: Canvas) {
-
-            //if (mAmbient && (mLowBitAmbient || mBurnInProtection)) {
             canvas.drawColor(Color.BLACK)
-            //}
-//            else if (mAmbient) {
-//                canvas.drawBitmap(mGrayBackgroundBitmap, 0f, 0f, mBackgroundPaint)
-//            } else {
-//                canvas.drawBitmap(mBackgroundBitmap, 0f, 0f, mBackgroundPaint)
-//            }
         }
 
         private fun getColorOfTheDay(): Int {
             val day = mCalendar.get(Calendar.DAY_OF_WEEK) - 1
-            return mWeekColors[day - 1];
+            return getColorForDay(day)
+        }
+
+        private fun getColorForDay(day: Int): Int {
+            var realDay = day
+            if (realDay == 0) realDay = 7
+            return mWeekColors[realDay - 1]
         }
 
         private fun getMonthName(): String {
-            val month = mCalendar.get(Calendar.MONTH)
-            return when (month) {
+            return when (mCalendar.get(Calendar.MONTH)) {
                 0 -> "Jan"
                 1 -> "Feb"
                 2 -> "Mar"
@@ -409,59 +247,79 @@ class MyWatchFace : CanvasWatchFaceService() {
             }
         }
 
+        private fun getNextEvent(): Pair<String, String> {
+            for (pair in mEvents) {
+                val eventTime = mCalendar.toInstant().truncatedTo(ChronoUnit.DAYS).plus((pair.second / 100).toLong(), ChronoUnit.HOURS)
+                val offset = eventTime.epochSecond - mCalendar.toInstant().epochSecond
+                val offsetInstant = Instant.ofEpochSecond(offset)
+                val hoursLeft = (offsetInstant.atZone(ZoneOffset.UTC).hour + (if (TimeZone.getDefault().observesDaylightTime()) -1 else 0))
+                val minutesLeft = offsetInstant.atZone(ZoneOffset.UTC).minute
+                val secondsLeft = offsetInstant.atZone(ZoneOffset.UTC).second
+                if (hoursLeft * 60 + minutesLeft in 0..90) {
+                    val hourString = if (hoursLeft == 0) "" else "$hoursLeft:"
+                    val minuteString = minutesLeft.toString().padStart(2, '0') + ":"
+                    val secondString = secondsLeft.toString().padStart(2, '0')
+                    val offsetStr = if (mAmbient) hourString.replace(":", "h ") + minuteString.replace(":", "m ") else hourString + minuteString + secondString
+                    return Pair(pair.first, offsetStr)
+                }
+            }
+            return Pair("", "")
+        }
+
         private fun drawWatchFace(canvas: Canvas) {
 
-            /*
-             * Draw ticks. Usually you will want to bake this directly into the photo, but in
-             * cases where you want to allow users to select their own photos, this dynamically
-             * creates them on top of the photo.
-             */
-//            val innerTickRadius = mCenterX - 10
-//            val outerTickRadius = mCenterX
-//            for (tickIndex in 0..11) {
-//                val tickRot = (tickIndex.toDouble() * Math.PI * 2.0 / 12).toFloat()
-//                val innerX = Math.sin(tickRot.toDouble()).toFloat() * innerTickRadius
-//                val innerY = (-Math.cos(tickRot.toDouble())).toFloat() * innerTickRadius
-//                val outerX = Math.sin(tickRot.toDouble()).toFloat() * outerTickRadius
-//                val outerY = (-Math.cos(tickRot.toDouble())).toFloat() * outerTickRadius
-//                canvas.drawLine(mCenterX + innerX, mCenterY + innerY,
-//                        mCenterX + outerX, mCenterY + outerY, mTickAndCirclePaint)
-//            }
+            val margin = 8F
+            val topMargin = -10
 
-            /*
-             * These calculations reflect the rotation in degrees per unit of time, e.g.,
-             * 360 / 60 = 6 and 360 / 12 = 30.
-             */
-            val seconds =
-                    mCalendar.get(Calendar.SECOND) + mCalendar.get(Calendar.MILLISECOND) / 1000f
-            val secondsRotation = seconds * 6f
+            val seconds = mCalendar.get(Calendar.SECOND) + mCalendar.get(Calendar.MILLISECOND) / 1000f
+            val minutes = mCalendar.get(Calendar.MINUTE)
+            val hours = mCalendar.get((Calendar.HOUR_OF_DAY))
 
-            val minutesRotation = mCalendar.get(Calendar.MINUTE) * 6f
+            val totalSeconds = seconds + (60 * minutes) + (60 * 60 * hours)
+            val daySeconds = 24 * 60 * 60f
+            val todayFactor = totalSeconds / daySeconds
 
-            val hourHandOffset = mCalendar.get(Calendar.MINUTE) / 2f
-            val hoursRotation = mCalendar.get(Calendar.HOUR) * 30 + hourHandOffset
-
-
-            /*
-             * Save the canvas state before we can begin to rotate it.
-             */
             canvas.save()
 
             val angle = 360 / 7F;
             canvas.rotate(-90F + angle, mCenterX, mCenterY)
-//            canvas.save()
-            val dayOfWeek = mCalendar.get(Calendar.DAY_OF_WEEK) - 1
 
-            val margin = 8F
+            var today = mCalendar.get(Calendar.DAY_OF_WEEK) - 1
+            if (today == 0) today = 7
             for (dayIdx in 1..7) {
-                val col = if (dayOfWeek == dayIdx) getColorOfTheDay() else mInactiveDayColor
+                val col = when {
+                    dayIdx < today -> {
+                        ColorUtils.setAlphaComponent(getColorForDay(dayIdx), 70)
+                    }
+                    today == dayIdx -> {
+                        getColorOfTheDay()
+                    }
+                    else -> Color.argb(0, 0, 0, 0)
+                }
+                if (!mAmbient) {
+                    canvas.drawArc(
+                            margin,
+                            margin,
+                            (mCenterX * 2) - margin,
+                            (mCenterY * 2) - margin,
+                            0F,
+                            angle - 1,
+                            false,
+                            Paint().apply {
+                                color = Color.argb(20, 255, 255, 255)
+                                strokeWidth = 10F
+                                isAntiAlias = true
+                                style = Paint.Style.STROKE
+                            }
+                    )
+                }
                 canvas.drawArc(
                         margin,
                         margin,
                         (mCenterX * 2) - margin,
                         (mCenterY * 2) - margin,
                         0F,
-                        angle - 1,
+                        if (dayIdx == today) (angle * todayFactor) - 1 else angle - 1,
                         false,
                         Paint().apply {
                             color = col
@@ -473,84 +331,112 @@ class MyWatchFace : CanvasWatchFaceService() {
                         }
                 )
                 canvas.rotate(angle, mCenterX, mCenterY)
-
             }
 
-
-//            canvas.restore()
-//            canvas.rotate(90F - angle, mCenterX, mCenterY)
-
-//            canvas.rotate(hoursRotation, mCenterX, mCenterY)
-//            canvas.drawLine(
-//                    mCenterX,
-//                    mCenterY - CENTER_GAP_AND_CIRCLE_RADIUS,
-//                    mCenterX,
-//                    mCenterY - sHourHandLength,
-//                    mHourPaint)
-//
-//            canvas.rotate(minutesRotation - hoursRotation, mCenterX, mCenterY)
-//            canvas.drawLine(
-//                    mCenterX,
-//                    mCenterY - CENTER_GAP_AND_CIRCLE_RADIUS,
-//                    mCenterX,
-//                    mCenterY - sMinuteHandLength,
-//                    mMinutePaint)
-
-
-            /*
-             * Ensure the "seconds" hand is drawn only when we are in interactive mode.
-             * Otherwise, we only update the watch face once a minute.
-             */
-//            if (!mAmbient) {
-//                canvas.rotate(secondsRotation - minutesRotation, mCenterX, mCenterY)
-//                canvas.drawLine(
-//                        mCenterX,
-//                        mCenterY - CENTER_GAP_AND_CIRCLE_RADIUS,
-//                        mCenterX,
-//                        mCenterY - mSecondHandLength,
-//                        mSecondPaint)
-//
-//            }
-
-
-//            canvas.drawCircle(
-//                    mCenterX,
-//                    mCenterY,
-//                    CENTER_GAP_AND_CIRCLE_RADIUS,
-//                    mTickAndCirclePaint)
-
-            /* Restore the canvas' original orientation. */
             canvas.restore()
-
-            canvas.drawText(mCalendar.get(Calendar.HOUR_OF_DAY).toString(), mCenterX - 35, mCenterY + 15, Paint().apply {
-                textSize = 56F
+            // HOUR
+            canvas.drawText(mCalendar.get(Calendar.HOUR_OF_DAY).toString().padStart(2, '0'), mCenterX - 45, mCenterY + topMargin, Paint().apply {
+                textSize = 72F
                 color = Color.WHITE
                 isAntiAlias = true
                 textAlign = Paint.Align.CENTER
             })
-
-            canvas.drawText(mCalendar.get(Calendar.MINUTE).toString().padStart(2, '0'), mCenterX + 35, mCenterY + 15, Paint().apply {
-                textSize = 56F
+            // MIN
+            canvas.drawText(mCalendar.get(Calendar.MINUTE).toString().padStart(2, '0'), mCenterX + 45, mCenterY + topMargin, Paint().apply {
+                textSize = 72F
                 color = if (mAmbient) Color.GRAY else getColorOfTheDay()
                 isAntiAlias = true
                 textAlign = Paint.Align.CENTER
             })
+            // SEC
             if (!mAmbient) {
-                canvas.drawText(mCalendar.get(Calendar.SECOND).toString().padStart(2, '0'), mCenterX, mCenterY + 60, Paint().apply {
-                    textSize = 26F
+                canvas.drawText(mCalendar.get(Calendar.SECOND).toString().padStart(2, '0'), mCenterX, mCenterY + topMargin + 45, Paint().apply {
+                    textSize = 32F
                     color = Color.GRAY
                     isAntiAlias = true
                     textAlign = Paint.Align.CENTER
                 })
             }
+
+
+            // DATE
             val topText = mCalendar.get(Calendar.DAY_OF_MONTH).toString() + " " + getMonthName()
-            canvas.drawText(topText, mCenterX, mCenterY - 55, Paint().apply {
-                textSize = 26F
-                color = getColorOfTheDay()
+            canvas.drawText(topText, mCenterX, mCenterY + topMargin - 80, Paint().apply {
+                textSize = 32F
+                color = if (mAmbient) Color.GRAY else getColorOfTheDay()
                 isAntiAlias = true
                 textAlign = Paint.Align.CENTER
             })
 
+            // EVENT
+            if (!mIsWeekend) {
+                val nextEventPair = getNextEvent()
+
+                val nextEventName = nextEventPair.first
+                val nextEventTime = nextEventPair.second
+                if (nextEventTime != "") {
+                    canvas.drawText(nextEventTime, mCenterX, mCenterY + topMargin + 100, Paint().apply {
+                        textSize = 32F
+                        color = if (mAmbient) Color.GRAY else getColorOfTheDay()
+                        isAntiAlias = true
+                        textAlign = Paint.Align.CENTER
+                    })
+                    canvas.drawText(nextEventName, mCenterX, mCenterY + topMargin + 120, Paint().apply {
+                        textSize = 18F
+                        color = Color.GRAY
+                        isAntiAlias = true
+                        textAlign = Paint.Align.CENTER
+                    })
+                }
+            }
+            // BATT
+            canvas.drawText((getBatteryLevelFactor() * 100).toInt().toString(), 69f, mCenterY + 38f, Paint().apply {
+                textSize = 24F
+                color = Color.GRAY
+                isAntiAlias = true
+                textAlign = Paint.Align.CENTER
+            })
+
+
+            canvas.save()
+            canvas.rotate(-90F, mCenterX, mCenterY)
+
+            canvas.translate(-30f, -110f)
+
+            val battSize = 30f
+            canvas.drawArc(
+                    mCenterX - battSize,
+                    mCenterY - battSize,
+                    mCenterX + battSize,
+                    mCenterY + battSize,
+                    0F,
+                    360f,
+                    false,
+                    Paint().apply {
+                        color = Color.argb(40, 255, 255, 255)
+                        strokeWidth = 3f
+                        isAntiAlias = true
+                        style = Paint.Style.STROKE
+                    }
+            )
+
+            canvas.drawArc(
+                    mCenterX - battSize,
+                    mCenterY - battSize,
+                    mCenterX + battSize,
+                    mCenterY + battSize,
+                    0F,
+                    360f * getBatteryLevelFactor(),
+                    false,
+                    Paint().apply {
+                        color = if (mAmbient) Color.GRAY else getColorOfTheDay()
+                        strokeWidth = 3f
+                        isAntiAlias = true
+                        style = Paint.Style.STROKE
+                    }
+            )
+            //canvas.rotate(90F, mCenterX, mCenterY)
+            canvas.restore()
 
         }
 
