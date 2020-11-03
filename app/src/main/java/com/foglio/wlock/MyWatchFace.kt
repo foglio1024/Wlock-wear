@@ -65,13 +65,7 @@ class MyWatchFace : CanvasWatchFaceService() {
 
         private var mIsWeekend: Boolean = false
 
-        private var mSecondHandLength: Float = 0F
-        private var sMinuteHandLength: Float = 0F
-        private var sHourHandLength: Float = 0F
-
         private lateinit var mBackgroundPaint: Paint
-        //private lateinit var mBackgroundBitmap: Bitmap
-        //private lateinit var mGrayBackgroundBitmap: Bitmap
 
         private var mAmbient: Boolean = false
         private var mLowBitAmbient: Boolean = false
@@ -249,7 +243,7 @@ class MyWatchFace : CanvasWatchFaceService() {
 
         private fun getNextEvent(): Pair<String, String> {
             for (pair in mEvents) {
-                val eventTime = mCalendar.toInstant().truncatedTo(ChronoUnit.DAYS).plus((pair.second / 100).toLong(), ChronoUnit.HOURS)
+                val eventTime = mCalendar.toInstant().truncatedTo(ChronoUnit.DAYS).plus((pair.second / 100).toLong(), ChronoUnit.HOURS).plus((pair.second%100).toLong(), ChronoUnit.MINUTES)
                 val offset = eventTime.epochSecond - mCalendar.toInstant().epochSecond
                 val offsetInstant = Instant.ofEpochSecond(offset)
                 val hoursLeft = (offsetInstant.atZone(ZoneOffset.UTC).hour + (if (TimeZone.getDefault().observesDaylightTime()) -1 else 0))
