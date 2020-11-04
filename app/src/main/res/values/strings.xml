@@ -1,5 +1,7 @@
 <resources>
     <string name="app_name">Wlock</string>
-    <string name="message">Watch face tapped</string>
-    <string name="my_analog_name">My Analog</string>
+    <string name="my_analog_name">Wlock</string>
+    <string name="break_time">pausa</string>
+    <string name="lunch_time">pranzo</string>
+    <string name="exit_time">uscita</string>
 </resources>
