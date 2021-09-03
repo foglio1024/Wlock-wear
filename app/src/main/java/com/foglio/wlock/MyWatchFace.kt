@@ -59,8 +59,8 @@ class MyWatchFace : CanvasWatchFaceService() {
         private lateinit var mCalendar: Calendar
 
         private lateinit var mVibrator: Vibrator
-        private val mVibratorPattern15: LongArray = longArrayOf(0, 25, 50, 25, 50, 25)
-        private val mVibratorPattern90: LongArray = longArrayOf(0, 25)
+        private val mVibratorPattern15: LongArray = longArrayOf(0, 50, 500, 50, 500, 50)
+        private val mVibratorPattern90: LongArray = longArrayOf(0, 50)
 
         private var mRegisteredTimeZoneReceiver = false
         private var mMuteMode: Boolean = false
@@ -71,7 +71,7 @@ class MyWatchFace : CanvasWatchFaceService() {
 
         private lateinit var mBackgroundPaint: Paint
 
-        private lateinit var mBatteryImage: Drawable
+        // private lateinit var mBatteryImage: Drawable
 
         private var mAmbient: Boolean = false
         private var mLowBitAmbient: Boolean = false
@@ -129,7 +129,7 @@ class MyWatchFace : CanvasWatchFaceService() {
 
         private fun initializeWatchFace() {
             mInactiveDayColor = Color.argb(100, 112, 128, 144)
-            mBatteryImage = ResourcesCompat.getDrawable(resources, R.drawable.battery, null)!!
+            // mBatteryImage = ResourcesCompat.getDrawable(resources, R.drawable.battery, null)!!
         }
 
         override fun onDestroy() {
@@ -202,8 +202,9 @@ class MyWatchFace : CanvasWatchFaceService() {
                     // The user has started a different gesture or otherwise cancelled the tap.
                 }
                 WatchFaceService.TAP_TYPE_TAP -> {
-                    // The user has completed the tap gesture.
-                    //mHourOffset += (if (x <= mCenterX) -1 else +1)
+//                    // The user has completed the tap gesture.
+//                    if(y <= mCenterY) mHourOffset += (if (x <= mCenterX) -1 else +1)
+//                    else mHourOffset += (if (x <= mCenterX) -24 else +24)
                 }
             }
             invalidate()
@@ -262,9 +263,7 @@ class MyWatchFace : CanvasWatchFaceService() {
                 val offset = eventTime.epochSecond - mCalendar.toInstant().epochSecond
                 val offsetInstant = Instant.ofEpochSecond(offset)
                 val hoursLeft =
-                    (offsetInstant.atZone(ZoneOffset.UTC).hour + (if (TimeZone.getDefault()
-                            .observesDaylightTime()
-                    ) -1 else 0))
+                    (offsetInstant.atZone(ZoneOffset.UTC).hour  + (if (TimeZone.getDefault().observesDaylightTime()) -2 else -1))
                 val minutesLeft = offsetInstant.atZone(ZoneOffset.UTC).minute
                 val secondsLeft = offsetInstant.atZone(ZoneOffset.UTC).second
 
@@ -286,6 +285,14 @@ class MyWatchFace : CanvasWatchFaceService() {
                 }
             }
             return Pair("", "")
+        }
+
+        private fun drawFerialWatchFace(canvas: Canvas) {
+
+        }
+
+        private fun drawWeekendWatchFace(canvas: Canvas) {
+
         }
 
         private fun drawWatchFace(canvas: Canvas) {
@@ -368,6 +375,30 @@ class MyWatchFace : CanvasWatchFaceService() {
                     isAntiAlias = true
                     textAlign = Paint.Align.CENTER
                 })
+            // mx HOUR
+            var mxHour = mCalendar.get(Calendar.HOUR_OF_DAY ) +(if (TimeZone.getTimeZone("America/Monterrey").observesDaylightTime()) -7 else -6)
+            if (mxHour < 0) mxHour += 24
+            canvas.drawText(
+                    mxHour.toString().padStart(2, '0') ,
+                    mCenterX - 100,
+                    mCenterY + topMargin - 15,
+                    Paint().apply {
+                        textSize = 24F
+                        color = Color.GRAY
+                        isAntiAlias = true
+                        textAlign = Paint.Align.CENTER
+                    })
+//            canvas.drawText(
+//                    "\uD83C\uDDF2\uD83C\uDDFD",
+//                    mCenterX - 100,
+//                    mCenterY + topMargin + 8,
+//                    Paint().apply {
+//                        textSize = 20F
+//                        color = Color.GRAY
+//                        isAntiAlias = true
+//                        textAlign = Paint.Align.CENTER
+//                    })
+
             // MIN
             canvas.drawText(
                 mCalendar.get(Calendar.MINUTE).toString().padStart(2, '0'),
