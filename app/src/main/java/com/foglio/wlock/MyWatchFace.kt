@@ -4,19 +4,14 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.res.Resources
 import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
 import android.graphics.Rect
-import android.graphics.drawable.Drawable
 import android.os.*
+import android.provider.Settings
 import android.support.wearable.watchface.CanvasWatchFaceService
 import android.support.wearable.watchface.WatchFaceService
 import android.support.wearable.watchface.WatchFaceStyle
 import android.view.SurfaceHolder
-import androidx.core.content.res.ResourcesCompat
-import androidx.core.graphics.ColorUtils
 
 import java.lang.ref.WeakReference
 import java.time.Instant
@@ -36,6 +31,7 @@ private const val INTERACTIVE_UPDATE_RATE_MS = 1000
 private const val MSG_UPDATE_TIME = 0
 
 class MyWatchFace : CanvasWatchFaceService() {
+
 
     override fun onCreateEngine(): Engine {
         return Engine()
@@ -57,43 +53,78 @@ class MyWatchFace : CanvasWatchFaceService() {
     inner class Engine : CanvasWatchFaceService.Engine() {
 
         private lateinit var mCalendar: Calendar
+        private lateinit var mDrawer: CanvasDrawer
 
         private lateinit var mVibrator: Vibrator
-        private val mVibratorPattern15: LongArray = longArrayOf(0, 50, 500, 50, 500, 50)
-        private val mVibratorPattern90: LongArray = longArrayOf(0, 50)
+
+        private var mIsWeekend: Boolean = false
+
+        private val mPulseDuration: Long = 40
+        private val mShortPausesDuration: Long = 40
+        private val mLongPausesDuration: Long = 200
+
+        private val mWaveform15: VibrationEffect = VibrationEffect.createWaveform(
+            longArrayOf(
+                0, mPulseDuration,
+                mShortPausesDuration, mPulseDuration,
+                mShortPausesDuration, mPulseDuration
+            ), -1
+        )
+        private val mWaveform30: VibrationEffect = VibrationEffect.createWaveform(
+            longArrayOf(
+                0, mPulseDuration,
+                mShortPausesDuration, mPulseDuration,
+                mShortPausesDuration, mPulseDuration,
+                mLongPausesDuration, mPulseDuration,
+                mShortPausesDuration, mPulseDuration,
+                mShortPausesDuration, mPulseDuration
+            ), -1
+        )
+        private val mWaveform60: VibrationEffect = VibrationEffect.createWaveform(
+            longArrayOf(
+                0, mPulseDuration,
+                mShortPausesDuration, mPulseDuration,
+                mShortPausesDuration, mPulseDuration,
+                mLongPausesDuration, mPulseDuration,
+                mShortPausesDuration, mPulseDuration,
+                mShortPausesDuration, mPulseDuration,
+                mLongPausesDuration, mPulseDuration,
+                mShortPausesDuration, mPulseDuration,
+                mShortPausesDuration, mPulseDuration
+            ), -1
+        )
+        private val mWaveform0: VibrationEffect = VibrationEffect.createWaveform(
+            longArrayOf(
+                0, mPulseDuration,
+                mShortPausesDuration, mPulseDuration,
+                mShortPausesDuration, mPulseDuration,
+                mShortPausesDuration, mPulseDuration,
+                mShortPausesDuration, mPulseDuration,
+                mShortPausesDuration, mPulseDuration,
+                mShortPausesDuration, mPulseDuration
+            ), -1
+        )
 
         private var mRegisteredTimeZoneReceiver = false
         private var mMuteMode: Boolean = false
         private var mCenterX: Float = 0F
         private var mCenterY: Float = 0F
 
-        private var mIsWeekend: Boolean = false
-
-        private lateinit var mBackgroundPaint: Paint
-
-        // private lateinit var mBatteryImage: Drawable
-
         private var mAmbient: Boolean = false
         private var mLowBitAmbient: Boolean = false
         private var mBurnInProtection: Boolean = false
 
         private var mHourOffset: Int = 0
-        private var mInactiveDayColor: Int = 0
-        private var mWeekColors: Array<Int> = arrayOf(
-            Color.rgb(92, 116, 224),
-            Color.rgb(252, 230, 106),
-            Color.rgb(115, 206, 255),
-            Color.rgb(255, 182, 193),
-            Color.rgb(171, 115, 235),
-            Color.rgb(252, 70, 53),
-            Color.rgb(252, 186, 3)
-        )
 
-        private val mEvents: Array<Pair<String, Int>> = arrayOf(
-            Pair<String, Int>(getString(R.string.break_time), 1030),
-            Pair<String, Int>(getString(R.string.lunch_time), 1300),
-            Pair<String, Int>(getString(R.string.break_time), 1600),
-            Pair<String, Int>(getString(R.string.exit_time), 1730)
+        private val mEvents: Array<EventData> = arrayOf(
+            EventData(getString(R.string.work_time), 830, 45, true, false),
+            EventData(getString(R.string.work_time), 830, 45, true, false),
+            EventData(getString(R.string.lunch_time), 1230, 240, true, false),
+            EventData(getString(R.string.work_time), 1400, 45, true, false),
+            EventData(getString(R.string.exit_time), 1800, 240, true, false),
+            EventData(getString(R.string.bed_time), 2300, 60, true, true),
+            EventData(getString(R.string.lunch_time), 1300, 60, false, true),
+            EventData(getString(R.string.dinner_time), 1930, 60, true, true)
         )
 
         /* Handler to update the time once a second in interactive mode. */
@@ -117,19 +148,7 @@ class MyWatchFace : CanvasWatchFaceService() {
 
             mCalendar = Calendar.getInstance()
             mVibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-            initializeBackground()
-            initializeWatchFace()
-        }
-
-        private fun initializeBackground() {
-            mBackgroundPaint = Paint().apply {
-                color = Color.BLACK
-            }
-        }
-
-        private fun initializeWatchFace() {
-            mInactiveDayColor = Color.argb(100, 112, 128, 144)
-            // mBatteryImage = ResourcesCompat.getDrawable(resources, R.drawable.battery, null)!!
+            mDrawer = CanvasDrawer()
         }
 
         override fun onDestroy() {
@@ -152,18 +171,11 @@ class MyWatchFace : CanvasWatchFaceService() {
         override fun onAmbientModeChanged(inAmbientMode: Boolean) {
             super.onAmbientModeChanged(inAmbientMode)
             mAmbient = inAmbientMode
+            mDrawer.mAmbient = inAmbientMode
 
             // Check and trigger whether or not timer should be running (only
             // in active mode).
             updateTimer()
-        }
-
-        private fun getBatteryLevelFactor(): Float {
-            val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-            val level = batteryIntent!!.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-            val scale = batteryIntent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
-
-            return level.toFloat() / scale.toFloat()
         }
 
         override fun onInterruptionFilterChanged(interruptionFilter: Int) {
@@ -187,6 +199,7 @@ class MyWatchFace : CanvasWatchFaceService() {
              */
             mCenterX = width / 2f
             mCenterY = height / 2f
+            mDrawer.setCenter(mCenterX, mCenterY)
         }
 
         /**
@@ -202,8 +215,8 @@ class MyWatchFace : CanvasWatchFaceService() {
                     // The user has started a different gesture or otherwise cancelled the tap.
                 }
                 WatchFaceService.TAP_TYPE_TAP -> {
-//                    // The user has completed the tap gesture.
-//                    if(y <= mCenterY) mHourOffset += (if (x <= mCenterX) -1 else +1)
+                    // The user has completed the tap gesture.
+//                    if (y <= mCenterY) mHourOffset += (if (x <= mCenterX) -1 else +1)
 //                    else mHourOffset += (if (x <= mCenterX) -24 else +24)
                 }
             }
@@ -214,333 +227,64 @@ class MyWatchFace : CanvasWatchFaceService() {
         override fun onDraw(canvas: Canvas, bounds: Rect) {
             val now = System.currentTimeMillis()
             mCalendar.timeInMillis = now + (mHourOffset * 1000 * 60 * 60)
+            mDrawer.drawBackground(canvas)
             mIsWeekend =
                 (mCalendar.get(Calendar.DAY_OF_WEEK) == 1 || mCalendar.get(Calendar.DAY_OF_WEEK) == 7)
-            drawBackground(canvas)
-            drawWatchFace(canvas)
 
-
+            val event = getNextEvent()
+            mDrawer.drawWatchFace(canvas, getBatteryLevelFactor(), mHourOffset, event, mIsWeekend)
         }
 
-        private fun drawBackground(canvas: Canvas) {
-            canvas.drawColor(Color.BLACK)
-        }
-
-        private fun getColorOfTheDay(): Int {
-            val day = mCalendar.get(Calendar.DAY_OF_WEEK) - 1
-            return getColorForDay(day)
-        }
-
-        private fun getColorForDay(day: Int): Int {
-            var realDay = day
-            if (realDay == 0) realDay = 7
-            return mWeekColors[realDay - 1]
-        }
-
-        private fun getMonthName(): String {
-            return when (mCalendar.get(Calendar.MONTH)) {
-                0 -> "Jan"
-                1 -> "Feb"
-                2 -> "Mar"
-                3 -> "Apr"
-                4 -> "May"
-                5 -> "Jun"
-                6 -> "Jul"
-                7 -> "Aug"
-                8 -> "Sep"
-                9 -> "Oct"
-                10 -> "Nov"
-                11 -> "Dec"
-                else -> ""
+        private fun canFireEvent(event: EventData): Boolean {
+            return if(mIsWeekend){
+                event.showOnWeekEnds
+            } else{
+                event.showOnWorkDays
             }
         }
 
         private fun getNextEvent(): Pair<String, String> {
-            for (pair in mEvents) {
+
+            for (event in mEvents) {
+                if(!canFireEvent(event)) continue
                 val eventTime = mCalendar.toInstant().truncatedTo(ChronoUnit.DAYS)
-                    .plus((pair.second / 100).toLong(), ChronoUnit.HOURS)
-                    .plus((pair.second % 100).toLong(), ChronoUnit.MINUTES)
+                    .plus((event.time / 100).toLong(), ChronoUnit.HOURS)
+                    .plus((event.time % 100).toLong(), ChronoUnit.MINUTES)
                 val offset = eventTime.epochSecond - mCalendar.toInstant().epochSecond
                 val offsetInstant = Instant.ofEpochSecond(offset)
-                val hoursLeft =
-                    (offsetInstant.atZone(ZoneOffset.UTC).hour  + (if (TimeZone.getDefault().observesDaylightTime()) -2 else -1))
+                val hoursLeft =offsetInstant.atZone(ZoneOffset.UTC).hour - 1;
+//                    (offsetInstant.atZone(ZoneOffset.UTC).hour + (if (TimeZone.getDefault()
+//                            .observesDaylightTime()
+//                    ) -2 else -1))
                 val minutesLeft = offsetInstant.atZone(ZoneOffset.UTC).minute
                 val secondsLeft = offsetInstant.atZone(ZoneOffset.UTC).second
+                val totalMinutesLeft = hoursLeft * 60 + minutesLeft
 
-                if (((hoursLeft * 60 + minutesLeft) == 15) && secondsLeft == 0)
-                    mVibrator.vibrate(mVibratorPattern15, -1)
-                else if (((hoursLeft * 60 + minutesLeft) == 90) && secondsLeft == 0)
-                    mVibrator.vibrate(mVibratorPattern90, -1)
+                if (secondsLeft == 0) {
+                    when (totalMinutesLeft) {
+                        15 -> mVibrator.vibrate(mWaveform15)
+                        30 -> mVibrator.vibrate(mWaveform30)
+                        60 -> mVibrator.vibrate(mWaveform60)
+                        0 -> mVibrator.vibrate(mWaveform0)
+                    }
+                }
 
-                if (hoursLeft * 60 + minutesLeft in 0..90) {
+                if (totalMinutesLeft in 0..event.showAt) {
                     val hourString = if (hoursLeft == 0) "" else "$hoursLeft:"
-                    val minuteString = minutesLeft.toString().padStart(2, '0') + ":"
+                    val minuteString =
+                        minutesLeft.toString().padStart(if (hoursLeft == 0) 0 else 2, '0') + ":"
                     val secondString = secondsLeft.toString().padStart(2, '0')
                     val offsetStr =
                         if (mAmbient) hourString.replace(":", "h ") + minuteString.replace(
                             ":",
-                            "m "
+                            "m"
                         ) else hourString + minuteString + secondString
-                    return Pair(pair.first, offsetStr)
+                    return Pair(event.name, offsetStr)
                 }
             }
             return Pair("", "")
         }
 
-        private fun drawFerialWatchFace(canvas: Canvas) {
-
-        }
-
-        private fun drawWeekendWatchFace(canvas: Canvas) {
-
-        }
-
-        private fun drawWatchFace(canvas: Canvas) {
-
-            val margin = 8F
-            val topMargin = -10
-
-            val seconds =
-                mCalendar.get(Calendar.SECOND) + mCalendar.get(Calendar.MILLISECOND) / 1000f
-            val minutes = mCalendar.get(Calendar.MINUTE)
-            val hours = mCalendar.get((Calendar.HOUR_OF_DAY))
-
-            val totalSeconds = seconds + (60 * minutes) + (60 * 60 * hours)
-            val daySeconds = 24 * 60 * 60f
-            val todayFactor = totalSeconds / daySeconds
-
-            canvas.save()
-
-            val angle = 360 / 7F;
-            canvas.rotate(-90F + angle, mCenterX, mCenterY)
-
-            var today = mCalendar.get(Calendar.DAY_OF_WEEK) - 1
-            if (today == 0) today = 7
-            for (dayIdx in 1..7) {
-                val col = when {
-                    dayIdx < today -> {
-                        ColorUtils.setAlphaComponent(getColorForDay(dayIdx), 70)
-                    }
-                    today == dayIdx -> {
-                        getColorOfTheDay()
-                    }
-                    else -> Color.argb(0, 0, 0, 0)
-                }
-                if (!mAmbient) {
-                    canvas.drawArc(
-                        margin,
-                        margin,
-                        (mCenterX * 2) - margin,
-                        (mCenterY * 2) - margin,
-                        0F,
-                        angle - 1,
-                        false,
-                        Paint().apply {
-                            color = Color.argb(20, 255, 255, 255)
-                            strokeWidth = 10F
-                            isAntiAlias = true
-                            style = Paint.Style.STROKE
-                        }
-                    )
-                }
-                canvas.drawArc(
-                    margin,
-                    margin,
-                    (mCenterX * 2) - margin,
-                    (mCenterY * 2) - margin,
-                    0F,
-                    if (dayIdx == today) (angle * todayFactor) - 1 else angle - 1,
-                    false,
-                    Paint().apply {
-                        color = col
-                        strokeWidth = 10F
-                        isAntiAlias = true
-                        style = Paint.Style.STROKE
-                        //strokeCap = Paint.Cap.ROUND
-
-                    }
-                )
-                canvas.rotate(angle, mCenterX, mCenterY)
-            }
-
-            canvas.restore()
-            // HOUR
-            canvas.drawText(
-                mCalendar.get(Calendar.HOUR_OF_DAY).toString().padStart(2, '0'),
-                mCenterX - 45,
-                mCenterY + topMargin,
-                Paint().apply {
-                    textSize = 72F
-                    color = Color.WHITE
-                    isAntiAlias = true
-                    textAlign = Paint.Align.CENTER
-                })
-            // mx HOUR
-            var mxHour = mCalendar.get(Calendar.HOUR_OF_DAY ) +(if (TimeZone.getTimeZone("America/Monterrey").observesDaylightTime()) -7 else -6)
-            if (mxHour < 0) mxHour += 24
-            canvas.drawText(
-                    mxHour.toString().padStart(2, '0') ,
-                    mCenterX - 100,
-                    mCenterY + topMargin - 15,
-                    Paint().apply {
-                        textSize = 24F
-                        color = Color.GRAY
-                        isAntiAlias = true
-                        textAlign = Paint.Align.CENTER
-                    })
-//            canvas.drawText(
-//                    "\uD83C\uDDF2\uD83C\uDDFD",
-//                    mCenterX - 100,
-//                    mCenterY + topMargin + 8,
-//                    Paint().apply {
-//                        textSize = 20F
-//                        color = Color.GRAY
-//                        isAntiAlias = true
-//                        textAlign = Paint.Align.CENTER
-//                    })
-
-            // MIN
-            canvas.drawText(
-                mCalendar.get(Calendar.MINUTE).toString().padStart(2, '0'),
-                mCenterX + 45,
-                mCenterY + topMargin,
-                Paint().apply {
-                    textSize = 72F
-                    color = if (mAmbient) Color.GRAY else getColorOfTheDay()
-                    isAntiAlias = true
-                    textAlign = Paint.Align.CENTER
-                })
-            // SEC
-            if (!mAmbient) {
-                canvas.drawText(
-                    mCalendar.get(Calendar.SECOND).toString().padStart(2, '0'),
-                    mCenterX,
-                    mCenterY + topMargin + 45,
-                    Paint().apply {
-                        textSize = 32F
-                        color = Color.GRAY
-                        isAntiAlias = true
-                        textAlign = Paint.Align.CENTER
-                    })
-            }
-
-            // DATE
-            val topText = mCalendar.get(Calendar.DAY_OF_MONTH).toString() + " " + getMonthName()
-            canvas.drawText(topText, mCenterX, mCenterY + topMargin - 80, Paint().apply {
-                textSize = 32F
-                color = if (mAmbient) Color.GRAY else getColorOfTheDay()
-                isAntiAlias = true
-                textAlign = Paint.Align.CENTER
-            })
-
-            // EVENT
-            if (!mIsWeekend) {
-                val nextEventPair = getNextEvent()
-
-                val nextEventName = nextEventPair.first
-                val nextEventTime = nextEventPair.second
-                if (nextEventTime != "") {
-                    canvas.drawText(
-                        nextEventTime,
-                        mCenterX,
-                        mCenterY + topMargin + 100,
-                        Paint().apply {
-                            textSize = 32F
-                            color = if (mAmbient) Color.GRAY else getColorOfTheDay()
-                            isAntiAlias = true
-                            textAlign = Paint.Align.CENTER
-                        })
-                    canvas.drawText(
-                        nextEventName,
-                        mCenterX,
-                        mCenterY + topMargin + 120,
-                        Paint().apply {
-                            textSize = 18F
-                            color = Color.GRAY
-                            isAntiAlias = true
-                            textAlign = Paint.Align.CENTER
-                        })
-                }
-            }
-
-            val battRotation = 90f + 45 / 2f
-            val battSweep = 45f
-
-            canvas.save()
-            canvas.rotate(battRotation, mCenterX, mCenterY)
-            //canvas.translate(-30f, -110f)
-
-            val battSize = 140f
-            canvas.drawArc(
-                mCenterX - battSize,
-                mCenterY - battSize,
-                mCenterX + battSize,
-                mCenterY + battSize,
-                0f,
-                -battSweep,
-                false,
-                Paint().apply {
-                    color = Color.argb(40, 255, 255, 255)
-                    strokeWidth = 3f
-                    isAntiAlias = true
-                    style = Paint.Style.STROKE
-                    strokeCap = Paint.Cap.ROUND
-                }
-            )
-
-            canvas.drawArc(
-                mCenterX - battSize,
-                mCenterY - battSize,
-                mCenterX + battSize,
-                mCenterY + battSize,
-                0f,
-                -battSweep * getBatteryLevelFactor(),
-                false,
-                Paint().apply {
-                    color = Color.GRAY
-                    strokeWidth = 3f
-                    isAntiAlias = true
-                    style = Paint.Style.STROKE
-                    strokeCap = Paint.Cap.ROUND
-                }
-            )
-
-            //canvas.rotate(90F, mCenterX, mCenterY)
-            canvas.restore()
-
-//            canvas.save()
-//            canvas.rotate(battRotation + 180f, mCenterX, mCenterY)
-//            canvas.translate(-135f, 15f)
-//            canvas.rotate(-(battRotation + 180f), mCenterX, mCenterY)
-//            val bounds = Rect(
-//                mCenterX.toInt() - 10,
-//                mCenterY.toInt() - 10,
-//                mCenterX.toInt() + 10,
-//                mCenterY.toInt() + 10
-//            )
-//            mBatteryImage.bounds = bounds
-//            mBatteryImage.draw(canvas)
-//
-//            canvas.restore()
-//            canvas.save()
-//            canvas.rotate(battRotation + 180f, mCenterX, mCenterY)
-//            canvas.translate(-135f, 15f)
-//            canvas.rotate(-(battRotation + 180f), mCenterX, mCenterY)
-//            // BATT
-//            canvas.drawText(
-//                (getBatteryLevelFactor() * 100).toInt().toString(),
-//                mCenterX,
-//                mCenterY + 24f,
-//                Paint().apply {
-//                    textSize = 14F
-//                    color = getColorOfTheDay()
-//                    isAntiAlias = true
-//                    textAlign = Paint.Align.CENTER
-//                })
-//
-//            canvas.restore()
-
-        }
 
         override fun onVisibilityChanged(visible: Boolean) {
             super.onVisibilityChanged(visible)
@@ -556,6 +300,14 @@ class MyWatchFace : CanvasWatchFaceService() {
 
             /* Check and trigger whether or not timer should be running (only in active mode). */
             updateTimer()
+        }
+
+        private fun getBatteryLevelFactor(): Float {
+            val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val level = batteryIntent!!.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+            val scale = batteryIntent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+
+            return level.toFloat() / scale.toFloat()
         }
 
         private fun registerReceiver() {

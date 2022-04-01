@@ -4,4 +4,7 @@
     <string name="break_time">pausa</string>
     <string name="lunch_time">pranzo</string>
     <string name="exit_time">uscita</string>
+    <string name="work_time">lavoro</string>
+    <string name="bed_time">letto</string>
+    <string name="dinner_time">cena</string>
 </resources>
