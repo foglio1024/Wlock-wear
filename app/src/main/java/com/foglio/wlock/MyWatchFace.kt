@@ -208,16 +208,10 @@ class MyWatchFace : CanvasWatchFaceService() {
          */
         override fun onTapCommand(tapType: Int, x: Int, y: Int, eventTime: Long) {
             when (tapType) {
-                WatchFaceService.TAP_TYPE_TOUCH -> {
-                    // The user has started touching the screen.
-                }
-                WatchFaceService.TAP_TYPE_TOUCH_CANCEL -> {
-                    // The user has started a different gesture or otherwise cancelled the tap.
-                }
                 WatchFaceService.TAP_TYPE_TAP -> {
                     // The user has completed the tap gesture.
-//                    if (y <= mCenterY) mHourOffset += (if (x <= mCenterX) -1 else +1)
-//                    else mHourOffset += (if (x <= mCenterX) -24 else +24)
+                    //if (y <= mCenterY) mHourOffset += (if (x <= mCenterX) -1 else +1)
+                    //else mHourOffset += (if (x <= mCenterX) -24 else +24)
                 }
             }
             invalidate()
@@ -252,7 +246,8 @@ class MyWatchFace : CanvasWatchFaceService() {
                     .plus((event.time % 100).toLong(), ChronoUnit.MINUTES)
                 val offset = eventTime.epochSecond - mCalendar.toInstant().epochSecond
                 val offsetInstant = Instant.ofEpochSecond(offset)
-                val hoursLeft =offsetInstant.atZone(ZoneOffset.UTC).hour - 1;
+                var hoursLeft = offsetInstant.atZone(ZoneOffset.UTC).hour - 1;
+                if(TimeZone.getDefault().observesDaylightTime()) hoursLeft--
 //                    (offsetInstant.atZone(ZoneOffset.UTC).hour + (if (TimeZone.getDefault()
 //                            .observesDaylightTime()
 //                    ) -2 else -1))
