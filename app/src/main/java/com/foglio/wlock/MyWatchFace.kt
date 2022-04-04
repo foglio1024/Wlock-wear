@@ -247,7 +247,7 @@ class MyWatchFace : CanvasWatchFaceService() {
                 val offset = eventTime.epochSecond - mCalendar.toInstant().epochSecond
                 val offsetInstant = Instant.ofEpochSecond(offset)
                 var hoursLeft = offsetInstant.atZone(ZoneOffset.UTC).hour - 1;
-                if(TimeZone.getDefault().observesDaylightTime()) hoursLeft--
+                if(TimeZone.getDefault().observesDaylightTime()) hoursLeft-=1
 //                    (offsetInstant.atZone(ZoneOffset.UTC).hour + (if (TimeZone.getDefault()
 //                            .observesDaylightTime()
 //                    ) -2 else -1))
